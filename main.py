@@ -1,28 +1,21 @@
 # import relevant libraries
-import pandas as pd, pyautogui, time, random, webbrowser
-from utility import check_chrome_path
+import pandas as pd, pyautogui, time, random, subprocess, webbrowser
+from utility import open_with_zoom
 
-# Set the Chrome path if Chrome is installed in device
-chrome_path = check_chrome_path()
-if chrome_path:
-    chrome_path = chrome_path + " %s"     # the %s is a placeholder for the url to be opened.
+## First, open a new default browser window and visit the shopee main site. Ensure that you are logged in, if not log in, then leave the tab open.
 
-print(chrome_path)
+# 1) Read in the urls from excel in folder
+# Check if folder exists, if not raise error
+# Check if got file of certain filename, if not raise error
+# if got file, check if 
 
 urls = [
-    "https://www.ccs.gov.sg",
     "https://shopee.sg/2L-High-Speed-Blender-Heavy-Duty-Ice-Crushing-Juicer-Smoothie-Maker-Food-Processor-Multifunction-Pengisar-Mixer-i.1714340390.54208947162?extraParams=%7B%22display_model_id%22%3A405792851667%2C%22model_selection_logic%22%3A3%7D",
     "https://shopee.sg/Fully-Automatic-Soy-Milk-Maker-Portable-Juicer-Blender-Machine-Smart-Soya-Bean-Milk-Machine-i.299068664.50058759450?extraParams=%7B%22display_model_id%22%3A420778894384%2C%22model_selection_logic%22%3A3%7D"
 ]
 
 # Iterate through the list and open each in a new tab
-for index, url in enumerate(urls):
-    if index == 0:
-        # Opens the first URL in a new browser window
-        webbrowser.open_new(url)
-    else:
-        # Opens subsequent URLs in new tabs within the same browser window
-        webbrowser.open_new_tab(url)
-    
+for url in urls:
+    open_with_zoom(url)
     # Optional: Short pause to let the browser process each request
-    time.sleep(random.uniform(0.3,0.5))
+    time.sleep(random.uniform(0.5,1))
