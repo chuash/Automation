@@ -17,7 +17,8 @@ if __name__ == "__main__":
             raise MyError("Listings excel file does not exist, please check!")
 
         # 2) Read in the urls from excel file
-        pd.read_excel(data_file,)
+        url = pd.read_excel(data_file, usecols=['URL'])   #need openpyxl
+        print(type(url))
  
 
         urls = [
