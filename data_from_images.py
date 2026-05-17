@@ -12,7 +12,7 @@ if __name__ == "__main__":
     try:
         # retrieve the image files in the images folder
         image_files = [
-            file for file in Path("images").rglob("*") if file.suffix.lower() in [".png", ".jpg", ".jpeg"]
+            file for file in Path("images").rglob("*") if file.name.lower()[1:] in ["-0.png", "-1.png"]  #file.suffix.lower() in [".png", ".jpg", ".jpeg"]
         ]
 
         # initialise list to hold VLM responses
@@ -29,7 +29,7 @@ if __name__ == "__main__":
                 schema = VLM_response_1
 
             # VLM response
-            response = llm_output(client=Groq_client, model=Groq_model, sys_msg=sys_msg, input=input, image_path=image_path, schema=schema)
+            response = llm_output(client=Groq_client, model=Groq_model, sys_msg=sys_msg, input=input, image_path=image_path, schema=schema,delay_in_seconds=3)
             extractions.append(json.loads(response.choices[0].message.content))
         
         # seperate the even and odd entries into seperate dataframes

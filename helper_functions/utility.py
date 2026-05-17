@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from groq import Groq
 from openai import OpenAI
 from openai.types.chat import ChatCompletion
+from PIL import Image, ImageEnhance
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
@@ -13,10 +14,14 @@ if not load_dotenv(".env"):
 # Define variables
 Groq_model = os.getenv("GROQ_MODEL_NAME")
 Groq_client = OpenAI(api_key=os.getenv("GROQ_API_KEY"), base_url="https://api.groq.com/openai/v1")
+OAI_model = os.getenv("OPENAI_MODEL_NAME")
+OAI_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  
 data_file = os.getenv("DATA_FILE")
 sys_msg = "You are an expert in extracting text from images"
-user_msg = ["extract 1) title of product (found at top right hand corner immediately above the ratings), 2) the shop name selling the product (found immediately above the 'Chat Now' button).",
-            "extract 1) whether there is safety mark number (found to the right of the text 'Safety Mark', if no number is detected, return empty string) and 2) where the product ships from (found to the right of the text 'Ships From')."]
+#user_msg = ["extract 1) title of product (found at top right hand corner immediately above the ratings), 2) the shop name selling the product (found immediately above the 'Chat Now' button).",
+#            "extract 1) whether there is safety mark number (found to the right of the text 'Safety Mark', if no number is detected or if no 'Safety Mark' text detected, return empty string) and 2) where the product ships from (found to the right of the text 'Ships From')."]
+user_msg = ["extract 1) full title of product (found at top right hand corner above the ratings, INCLUDE all text that you see), 2) name of shop selling the product (found immediately above Online or not status indicator. Always give the full name EVEN if short form is available).",
+            "extract 1) where the product ships from (found to the right of the text 'Ships From'), 2) ONLY if you detect the 'Safety Mark' text, then extract the safety mark number (found to the right of the text 'Safety Mark'). If no number is found, return empty string. DO NOT make up a number."]
 
 
 # Set up custom exception class
@@ -32,14 +37,15 @@ class MyError(Exception):
 # Set up structured LLM output schema
 class VLM_response_0(BaseModel):
     """Pydantic response class to ensure that VLM always responds in the same format."""
-    Product_Title: str = Field(..., description="Title of product, per extracted from product listing image")
-    Seller_Name: str = Field(..., description="Name of shop selling product, per extracted from product listing image")
+    Product_Title: str = Field(..., description="Title of product, per extracted from product listing image. Include non-English words if present")
+    Seller_Name: str = Field(..., description="Full name of shop selling product, per extracted from product listing image")
 
 
 class VLM_response_1(BaseModel):
     """Pydantic response class to ensure that VLM always responds in the same format."""
-    Safety_Mark: Optional[str] = Field(..., description="The Safety Mark number, per extracted from product listing image. If no Safety Mark number, return empty string")
     Ships_From: str = Field(..., description="Place where product ships from, per extracted from product listing image")
+    Safety_Mark: Optional[str] = Field(..., description="The Safety Mark number, per extracted from product listing image. If no Safety Mark number, or no 'Safety Mark' label detected, return empty string")
+    
     
 
 # Set up shared logger instance for the entire application.
@@ -109,7 +115,7 @@ def scroll_screenshot(index, scroll_amount = 800, num_scrolls = 2):
      for i in range(num_scrolls):
         time.sleep(2)
         # Take screenshot of current viewport
-        im = pyautogui.screenshot(os.path.join('images', f"{index}-{i}.png"))
+        pyautogui.screenshot(os.path.join('images', f"{index}-{i}.png"))
         if i == num_scrolls-1:
             pass
         else:
@@ -125,9 +131,9 @@ def encode_image(image_path):
     return base64.b64encode(image_file.read()).decode('utf-8')
 
 
-# Set up synchronous LLM API response
-def llm_output(client:Groq, model:str, sys_msg:str, input:str, image_path:str, schema:BaseModel|None = None,
-                temperature:int=0, delay_in_seconds:float=0.0)-> BaseModel|ChatCompletion:
+# Set up synchronous Groq API response
+def llm_output(client:Groq, model:str, sys_msg:str, input:str, image_path:str, schema:BaseModel,
+                temperature:int=0, delay_in_seconds:float=0.0)-> BaseModel:
     """ Takes in both text and image inputs while producing text outputs"""
     try:         
         # Introduce time delay, if necessary, so as to keep within rate limit of VLM API request.
@@ -137,7 +143,7 @@ def llm_output(client:Groq, model:str, sys_msg:str, input:str, image_path:str, s
         # Encode the image bytes into Base64 representation 
         base64_image = encode_image(image_path)
 
-        # The case when LLM response is expected to follow a particular schema
+        # Getting LLM response - expected to follow a particular schema
         if schema is not None:
             response = client.chat.completions.create(
                 model=model,
@@ -172,34 +178,91 @@ def llm_output(client:Groq, model:str, sys_msg:str, input:str, image_path:str, s
                 }  
                 )
         else:
-             # The case when LLM response is just normal string
-             response = client.responses.parse(
+            raise MyError(f"No response schema supplied.")
+        
+        return response
+   
+    except (Exception, BaseException) as e:
+            raise MyError(f"llm_output function error: {e}")
+
+
+# Set up synchronous OpenAI API response
+def llm_OAI_output(client:OpenAI, model:str, sys_msg:str, input:str, image_path:str, schema:BaseModel,
+                temperature:int=0, delay_in_seconds:float=0.0)-> BaseModel:
+    """ Takes in both text and image inputs while producing text outputs"""
+    try:         
+        # Introduce time delay, if necessary, so as to keep within rate limit of VLM API request.
+        if delay_in_seconds > 0:
+             time.sleep(delay_in_seconds)
+        
+        # Encode the image bytes into Base64 representation 
+        base64_image = encode_image(image_path)
+
+        # Getting LLM response - expected to follow a particular schema
+        if schema is not None:
+            response = client.responses.parse(
                 model=model,
                 input=[
                     {
                     "role": "system",
                     "content": sys_msg
                     },
+                    
                     {
                     "role": "user",
                     "content": [
                             {
-                                "type": "text", 
+                                "type": "input_text", 
                                 "text": f"Given the following product listing image, {input}"
                             },
                             {
-                                "type": "image_url",
-                                "detail": "auto",
-                                "image_url": {"url": f"data:image/png;base64,{base64_image}"}
+                                "type": "input_image",
+                                "image_url": f"data:image/png;base64,{base64_image}"
                             },
                         ]
                     }
                 ],
-                temperature=temperature
+                temperature=temperature,
+                text_format=schema
                 )
+        else:
+            raise MyError(f"No response schema supplied.")
+        
         return response
-    
+   
     except openai.APIError as e:
             raise MyError(f"llm_output function API error: {e}")
     except (Exception, BaseException) as e:
             raise MyError(f"llm_output function error: {e}")
+
+
+# Function to crop and enhance image contrast
+def alter_image(original_image_path, new_image_path):
+    # 1. Open image and extract original image width and height
+    img = Image.open(original_image_path)
+    orig_w, orig_h = img.size
+
+    # 2. Define how much to cut off (Example: 15% off top and sides)
+    top_cut = int(orig_h * 0.15)
+    side_cut = int(orig_w * 0.15)
+
+    # 3. Define the box coordinates
+    # Keep 'lower' as exactly orig_h to leave the bottom alone
+    box = (
+        side_cut,              # upper left coord
+        top_cut,               # upper upper coord
+        orig_w - side_cut,     # lower right coord
+        orig_h                 # lower lower coord (untouched bottom)
+    )
+
+    # 4. Crop and resize back to original size in one fluid step. Resampling with Lanczos preserves text and fine details for the VLM
+    cropped_image = img.crop(box).resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+
+    # 5. Initialize the contrast enhancer
+    enhancer = ImageEnhance.Contrast(cropped_image)
+
+    # 6. Increase contrast (1.5 = 50% boost, 2.0 = 100% boost)
+    final_img = enhancer.enhance(1.5)
+
+    # 7. Save the output
+    final_img.save(new_image_path)
