@@ -20,7 +20,7 @@ data_file = os.getenv("DATA_FILE")
 sys_msg = "You are an expert in extracting text from images"
 #user_msg = ["extract 1) title of product (found at top right hand corner immediately above the ratings), 2) the shop name selling the product (found immediately above the 'Chat Now' button).",
 #            "extract 1) whether there is safety mark number (found to the right of the text 'Safety Mark', if no number is detected or if no 'Safety Mark' text detected, return empty string) and 2) where the product ships from (found to the right of the text 'Ships From')."]
-user_msg = ["extract 1) full title of product (found at top right hand corner above the ratings, INCLUDE all text that you see), 2) name of shop selling the product (found immediately above Online or not status indicator. Always give the full name EVEN if short form is available).",
+user_msg = ["extract 1) full title of product (found at top right hand corner above the ratings, INCLUDE all text that you see), 2) name of shop selling the product (found immediately above Online or Active status indicator and to the left of 'Ratings'. Always give the full name EVEN if shorter form is available).",
             "extract 1) where the product ships from (found to the right of the text 'Ships From'), 2) ONLY if you detect the 'Safety Mark' text, then extract the safety mark number (found to the right of the text 'Safety Mark'). If no number is found, return empty string. DO NOT make up a number."]
 
 
@@ -237,14 +237,14 @@ def llm_OAI_output(client:OpenAI, model:str, sys_msg:str, input:str, image_path:
 
 
 # Function to crop and enhance image contrast
-def alter_image(original_image_path, new_image_path):
+def alter_image(original_image_path:str, new_image_path:str, horizontal_crop_amt:float, vertical_crop_amt:float, resize:bool=True):
     # 1. Open image and extract original image width and height
     img = Image.open(original_image_path)
     orig_w, orig_h = img.size
 
     # 2. Define how much to cut off (Example: 15% off top and sides)
-    top_cut = int(orig_h * 0.15)
-    side_cut = int(orig_w * 0.15)
+    top_cut = int(orig_h * vertical_crop_amt)
+    side_cut = int(orig_w * horizontal_crop_amt)
 
     # 3. Define the box coordinates
     # Keep 'lower' as exactly orig_h to leave the bottom alone
@@ -256,7 +256,10 @@ def alter_image(original_image_path, new_image_path):
     )
 
     # 4. Crop and resize back to original size in one fluid step. Resampling with Lanczos preserves text and fine details for the VLM
-    cropped_image = img.crop(box).resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+    if resize:
+        cropped_image = img.crop(box).resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+    else:
+        cropped_image = img.crop(box)
 
     # 5. Initialize the contrast enhancer
     enhancer = ImageEnhance.Contrast(cropped_image)

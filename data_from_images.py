@@ -1,12 +1,15 @@
 import json, os
 import pandas as pd
 from helper_functions.utility import (Groq_client, Groq_model, sys_msg, user_msg, MyError, data_file,
-                                      VLM_response_0, VLM_response_1, setup_shared_logger, llm_output)
+                                      VLM_response_0, VLM_response_1, setup_shared_logger, llm_output, alter_image)
 from pathlib import Path
 from tqdm import tqdm
 
 # Set up the shared logger
 logger = setup_shared_logger()
+
+# Create folder used to store the adjusted extracted images, if it does't exist
+Path('adjusted_images').mkdir(parents=True, exist_ok=True)
 
 if __name__ == "__main__":
     try:
@@ -28,8 +31,9 @@ if __name__ == "__main__":
                 input = user_msg[1]
                 schema = VLM_response_1
 
-            # VLM response
-            response = llm_output(client=Groq_client, model=Groq_model, sys_msg=sys_msg, input=input, image_path=image_path, schema=schema,delay_in_seconds=3)
+            # Adjust image before sending to VLM for response
+            alter_image(image_path, f"adjusted_images/{image_path.name}",0.2, 0.15, False)
+            response = llm_output(client=Groq_client, model=Groq_model, sys_msg=sys_msg, input=input, image_path=Path(f"adjusted_images/{image_path.name}"), schema=schema,delay_in_seconds=3)
             extractions.append(json.loads(response.choices[0].message.content))
         
         # seperate the even and odd entries into seperate dataframes
